@@ -1,7 +1,8 @@
 """ soru geldikten sonra hangi agent’in calisacagini belirleyen ince kontrol katmani. Su an mimari basit oldugu icin sadece ResearchAgent cagiriyor ve sonucu DebateState icine yerlestiriyor. Bunu kullanmamizin nedeni, ileride farkli agent’ler eklense bile giris noktasi ayni kalsin."""
 
 from agents.research_agent import ResearchAgent
-from models.debate_state import DebateState
+from config import RETRIEVAL_TOP_K
+from debate_state import DebateState
 
 
 class DebateRouter:
@@ -12,7 +13,7 @@ class DebateRouter:
 
         self.research_agent = research_agent or ResearchAgent()
 
-    def route(self, question: str) -> DebateState:
+    def route(self, question: str, top_k: int | None = None) -> DebateState:
         """Soruyu isler ve doldurulmus DebateState dondurur."""
 
         cleaned_question = question.strip()
@@ -22,7 +23,8 @@ class DebateRouter:
             state.research_summary = "Lutfen gecerli bir soru giriniz."
             return state
 
-        research_output = self.research_agent.research(cleaned_question)
+        resolved_top_k = top_k if isinstance(top_k, int) and top_k > 0 else RETRIEVAL_TOP_K
+        research_output = self.research_agent.research(cleaned_question, top_k=resolved_top_k)
         state.research_summary = research_output["topic_summary"]
         state.facts = research_output["key_facts"]
         state.sources = research_output["sources"]

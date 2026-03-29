@@ -16,7 +16,7 @@ import json
 # ORTAK FONKSİYON - ask_ollama
 # Tüm ajanların kullandığı LLM istemcisi.
 # ============================================================
-def ask_ollama(system_prompt, user_prompt, model_name="gemma3:12b"):
+def ask_ollama(system_prompt, user_prompt, model_name="gpt-oss:120b-cloud"):
     """
     Tüm ajanların kullanacağı ortak LLM istemcisidir.
     Ollama'ya prompt gönderir ve JSON yanıtını ayıklayıp Python Dict objesi olarak döndürür.

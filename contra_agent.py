@@ -63,15 +63,15 @@ class ContraAgent:
                 args_text = ""
                 for i, arg in enumerate(content.get("arguments", []), 1):
                     args_text += f"  - **{arg['title']}**: {arg['explanation']}\n"
-                body = f"{args_text}  Summary: {content.get('summary', '')}"
+                body = f"{args_text}  Ozet: {content.get('summary', '')}"
             else:  # CONTRA
                 ca_text = ""
                 for ca in content.get("counter_arguments", []):
-                    ca_text += f"  - **[targets: {ca['target_argument']}]**: {ca['criticism']}\n"
+                    ca_text += f"  - **[hedef: {ca['target_argument']}]**: {ca['criticism']}\n"
                 risk_text = ""
                 for r in content.get("risks", []):
                     risk_text += f"  - **[{r['severity']}] {r['title']}**: {r['description']}\n"
-                body = f"**Counter-Arguments:**\n{ca_text}**Risks:**\n{risk_text}  Summary: {content.get('summary', '')}"
+                body = f"**Karsi Argumanlar:**\n{ca_text}**Riskler:**\n{risk_text}  Ozet: {content.get('summary', '')}"
 
             sections.append(f"{header}\n{body}")
 
@@ -96,7 +96,7 @@ class ContraAgent:
         """
         # Format research facts
         facts_text = "\n".join(
-            f"  - Fact {i}: {fact}" for i, fact in enumerate(research.facts, 1)
+            f"  - Olgu {i}: {fact}" for i, fact in enumerate(research.facts, 1)
         )
 
         # Format current round's pro arguments
@@ -105,45 +105,46 @@ class ContraAgent:
             supporting = (
                 "\n".join(f"      • {f}" for f in arg.supporting_facts)
                 if arg.supporting_facts
-                else "      (none cited)"
+                else "      (atif yok)"
             )
             pro_args_text += (
-                f"  ### Argument {i}: {arg.title}\n"
-                f"  **Explanation**: {arg.explanation}\n"
-                f"  **Supporting Facts**:\n{supporting}\n\n"
+                f"  ### Arguman {i}: {arg.title}\n"
+                f"  **Aciklama**: {arg.explanation}\n"
+                f"  **Destekleyici Olgular**:\n{supporting}\n\n"
             )
 
         human_content = (
-            f"## Topic\n{research.topic_summary}\n\n"
-            f"## Research Facts\n{facts_text}\n\n"
+            f"## Konu\n{research.topic_summary}\n\n"
+            f"## Arastirma Olgulari\n{facts_text}\n\n"
         )
 
         # Add debate history if available (round 2+)
         if debate_history:
             history_text = ContraAgent._format_history(debate_history)
             human_content += (
-                f"## Previous Debate History\n{history_text}\n\n"
+                f"## Onceki Tartisma Gecmisi\n{history_text}\n\n"
             )
 
         human_content += (
-            f"## Pro Agent Arguments (Current Round)\n{pro_args_text}"
-            f"## Pro Agent Summary\n{pro_output.summary}\n\n"
+            f"## Pro Agent Argumanlari (Bu Tur)\n{pro_args_text}"
+            f"## Pro Agent Ozeti\n{pro_output.summary}\n\n"
         )
 
         # Add round 2+ specific instructions
         if debate_history:
             human_content += (
-                "IMPORTANT: The Pro Agent has responded to your previous criticisms. "
-                "You MUST now:\n"
-                "1. Identify if the Pro Agent successfully addressed your earlier criticisms or merely deflected them.\n"
-                "2. Find NEW weaknesses in the Pro Agent's updated arguments.\n"
-                "3. Escalate any risks that remain unaddressed from previous rounds.\n"
-                "4. Directly reference the Pro Agent's rebuttals and explain why they are insufficient.\n\n"
+                "ONEMLI: Pro Agent onceki elestirilerine yanit verdi. "
+                "Simdi SUNLARI yapmalisin:\n"
+                "1. Pro Agent'in onceki elestirileri gercekten giderip gidermedigini, yoksa sadece gecistirip gecistirmedigini belirle.\n"
+                "2. Guncellenmis pro argumanlarda YENI zayifliklar bul.\n"
+                "3. Onceki turlardan cozulmeden kalan riskleri daha da netlestir ve gerekiyorsa siddetini artir.\n"
+                "4. Pro Agent'in rebuttal noktalarina dogrudan atif yapip neden yetersiz olduklarini acikla.\n\n"
             )
 
         human_content += (
-            "Based on the topic, facts, debate history, and the Pro Agent's arguments above, "
-            "generate your CONTRA counter-arguments and risks in the specified JSON format."
+            "Yukaridaki konu, olgular, tartisma gecmisi ve Pro Agent argumanlarina dayanarak "
+            "CONTRA karsi argumanlarini ve risklerini belirtilen JSON formatinda uret. "
+            "JSON anahtarlari ayni kalsin; metin alanlarinin tamamini Turkce yaz."
         )
 
         return [
@@ -177,12 +178,7 @@ class ContraAgent:
 
         response = self.llm.invoke(messages)
 
-        try:
-            raw_json = json.loads(response.content)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"LLM response is not valid JSON:\n{response.content}"
-            ) from exc
+        raw_json = self._parse_json_response(response.content)
 
         try:
             output = ContraAgentOutput.model_validate(raw_json)
@@ -192,6 +188,42 @@ class ContraAgent:
             ) from exc
 
         return output
+
+    def _parse_json_response(self, content: object) -> dict:
+        """Parse model output into JSON even when wrapped with markdown fences."""
+
+        if isinstance(content, list):
+            content = "\n".join(str(part) for part in content)
+
+        text = str(content).strip()
+        if not text:
+            raise ValueError("LLM response is empty.")
+
+        candidates: list[str] = [text]
+
+        if "```json" in text:
+            fenced = text.split("```json", 1)[1]
+            fenced = fenced.split("```", 1)[0].strip()
+            candidates.append(fenced)
+        elif "```" in text:
+            fenced = text.split("```", 1)[1]
+            fenced = fenced.split("```", 1)[0].strip()
+            candidates.append(fenced)
+
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and start < end:
+            candidates.append(text[start : end + 1])
+
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+
+        raise ValueError(f"LLM response is not valid JSON:\n{text}")
 
     # ── Convenience ───────────────────────────────────────────────────
     def __repr__(self) -> str:

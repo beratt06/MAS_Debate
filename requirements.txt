@@ -4,3 +4,4 @@ pydantic>=2.0.0
 chromadb
 pypdf
 ollama
+streamlit>=1.36.0
